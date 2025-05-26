@@ -13,6 +13,8 @@ struct LanguageModel {
     var imageSupport: Bool
 }
 
-enum ModelProvider: Codable {
+enum ModelProvider: String, Codable, CaseIterable, Hashable {
     case ollama
+    case llamaCpp
+    case mlx
 }

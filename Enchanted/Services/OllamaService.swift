@@ -8,14 +8,48 @@
 import Foundation
 import OllamaKit
 
-class OllamaService: @unchecked Sendable {
+class OllamaService: LLMService, @unchecked Sendable {
     static let shared = OllamaService()
+    
+    var providerType: ModelProvider { .ollama }
     
     var ollamaKit: OllamaKit
     
     init() {
         ollamaKit = OllamaKit(baseURL: URL(string: "http://localhost:11434")!)
         initEndpoint()
+    }
+    
+    func sendMessage(prompt: String, model: LanguageModel, messages: [MessageSD]) async throws -> AsyncThrowingStream<String, Error> {
+        let ollamaMessages = messages.map { msg -> OKMessage in
+            var role: OKChatRequestData.Message.Role
+            switch msg.role {
+            case "user":
+                role = .user
+            case "assistant":
+                role = .assistant
+            case "system":
+                role = .system
+            default:
+                role = .user
+            }
+            return OKMessage(role: role, content: msg.content)
+        }
+        
+        let request = OKChatRequestData(model: model.name, messages: ollamaMessages)
+        
+        return AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    for try await streamResponse in ollamaKit.chat(data: request) {
+                        continuation.yield(streamResponse.message?.content ?? "")
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
     }
     
     func initEndpoint(url: String? = nil, bearerToken: String? = "okki") {
@@ -36,7 +70,7 @@ class OllamaService: @unchecked Sendable {
     
     func getModels() async throws -> [LanguageModel]  {
         let response = try await ollamaKit.models()
-        let models = response.models.map{
+        let models = response.models.map {
             LanguageModel(
                 name: $0.name,
                 provider: .ollama,
