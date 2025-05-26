@@ -64,8 +64,9 @@ struct Settings: View {
             let currentDefaultModelName = defaultModelName
             
             let allModels = await languageModelStore.models
-            if let providerModels = allModels.filter({ $0.modelProvider == currentProvider }),
-               !providerModels.isEmpty {
+            let providerModels = allModels.filter({ $0.modelProvider == currentProvider })
+            
+            if !providerModels.isEmpty {
                 if let modelToSelect = providerModels.first(where: { $0.name == currentDefaultModelName }) {
                     await languageModelStore.setModel(model: modelToSelect)
                 } else if let firstModel = providerModels.first {

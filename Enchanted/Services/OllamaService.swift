@@ -21,8 +21,8 @@ class OllamaService: LLMService, @unchecked Sendable {
     }
     
     func sendMessage(prompt: String, model: LanguageModel, messages: [MessageSD]) async throws -> AsyncThrowingStream<String, Error> {
-        let ollamaMessages = messages.map { msg -> OllamaKit.OKMessage in
-            var role: OllamaKit.OKChatRequestData.Message.Role
+        let ollamaMessages = messages.map { (msg: MessageSD) -> OKMessage in
+            var role: OKChatRequestData.Message.Role
             switch msg.role {
             case "user":
                 role = .user
@@ -33,10 +33,10 @@ class OllamaService: LLMService, @unchecked Sendable {
             default:
                 role = .user
             }
-            return OllamaKit.OKMessage(role: role, content: msg.content)
+            return OKMessage(role: role, content: msg.content)
         }
         
-        let request = OllamaKit.OKChatRequestData(model: model.name, messages: ollamaMessages)
+        let request = OKChatRequestData(model: model.name, messages: ollamaMessages)
         
         return AsyncThrowingStream { continuation in
             let cancellable = ollamaKit.chat(data: request)
