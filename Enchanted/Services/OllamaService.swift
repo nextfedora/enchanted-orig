@@ -21,8 +21,8 @@ class OllamaService: LLMService, @unchecked Sendable {
     }
     
     func sendMessage(prompt: String, model: LanguageModel, messages: [MessageSD]) async throws -> AsyncThrowingStream<String, Error> {
-        let ollamaMessages = messages.map { msg -> OKMessage in
-            var role: OKChatRequestData.Message.Role
+        let ollamaMessages = messages.map { msg -> OllamaKit.OKMessage in
+            var role: OllamaKit.OKChatRequestData.Message.Role
             switch msg.role {
             case "user":
                 role = .user
@@ -33,21 +33,30 @@ class OllamaService: LLMService, @unchecked Sendable {
             default:
                 role = .user
             }
-            return OKMessage(role: role, content: msg.content)
+            return OllamaKit.OKMessage(role: role, content: msg.content)
         }
         
-        let request = OKChatRequestData(model: model.name, messages: ollamaMessages)
+        let request = OllamaKit.OKChatRequestData(model: model.name, messages: ollamaMessages)
         
         return AsyncThrowingStream { continuation in
-            Task {
-                do {
-                    for try await streamResponse in ollamaKit.chat(data: request) {
-                        continuation.yield(streamResponse.message?.content ?? "")
+            let cancellable = ollamaKit.chat(data: request)
+                .sink(receiveCompletion: { completion in
+                    switch completion {
+                    case .finished:
+                        continuation.finish()
+                    case .failure(let error):
+                        continuation.finish(throwing: error)
                     }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
+                }, receiveValue: { streamResponse in // streamResponse is OllamaKit.OKChatResponse
+                    continuation.yield(streamResponse.message?.content ?? "")
+                    // Check if this is the last message in the stream based on OllamaKit's API.
+                    // If OKChatResponse indicates it's the final message (e.g. a `done` flag or specific content),
+                    // you might call continuation.finish() here.
+                    // For now, relying on the publisher's completion.
+                })
+
+            continuation.onTermination = { @Sendable _ in
+                cancellable.cancel()
             }
         }
     }

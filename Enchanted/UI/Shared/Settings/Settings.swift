@@ -54,16 +54,34 @@ struct Settings: View {
         // Forcing re-initialization of the store might be too broad.
         // A dedicated method in LanguageModelStore to reconfigure services would be cleaner.
         // For now, re-creating the store instance to trigger its init which reads UserDefaults.
-        // This is a simplified approach; a more robust solution would involve a dedicated method in LanguageModelStore.
-        LanguageModelStore.shared = LanguageModelStore(swiftDataService: SwiftDataService.shared)
-        
         Task {
             Haptics.shared.mediumTap()
-            try? await languageModelStore.loadModels()
-            // Update the default model for the currently selected provider
-            languageModelStore.setModel(modelName: defaultModelName)
+            try? await languageModelStore.reconfigureServicesAndReloadModels() // This now also calls loadModels()
+            // Ensure the selected model is updated after reloading, considering the current provider
+            // Accessing models and selectedProvider needs to be on the MainActor or passed into the Task.
+            // For simplicity, capture necessary values before the async task or ensure MainActor context for UI updates.
+            let currentProvider = selectedProvider
+            let currentDefaultModelName = defaultModelName
+            
+            let allModels = await languageModelStore.models
+            if let providerModels = allModels.filter({ $0.modelProvider == currentProvider }),
+               !providerModels.isEmpty {
+                if let modelToSelect = providerModels.first(where: { $0.name == currentDefaultModelName }) {
+                    await languageModelStore.setModel(model: modelToSelect)
+                } else if let firstModel = providerModels.first {
+                    await languageModelStore.setModel(model: firstModel)
+                    defaultModelName = firstModel.name // Update AppStorage as fallback was used
+                }
+            } else {
+                // No models for this provider, clear selection
+                await languageModelStore.setModel(model: nil)
+                defaultModelName = "" // Clear AppStorage
+            }
+            
+            DispatchQueue.main.async {
+                presentationMode.wrappedValue.dismiss()
+            }
         }
-        presentationMode.wrappedValue.dismiss()
     }
     
     private func checkServer() {

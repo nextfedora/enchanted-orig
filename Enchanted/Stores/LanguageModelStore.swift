@@ -173,4 +173,38 @@ final class LanguageModelStore {
         }
         try await swiftDataService.deleteModels()
     }
+
+    public func reconfigureServicesAndReloadModels() async throws {
+        // Re-initialize LlamaCppService
+        if let llamaCppUrlString = UserDefaults.standard.string(forKey: "llamaCppUri"),
+           !llamaCppUrlString.isEmpty,
+           var llamaCppUrl = URL(string: llamaCppUrlString) {
+            if llamaCppUrl.scheme == nil { // Add default scheme if missing
+                llamaCppUrl = URL(string: "http://" + llamaCppUrlString) ?? llamaCppUrl
+            }
+            let apiKey = UserDefaults.standard.string(forKey: "llamaCppApiKey")
+            self.llamaCppService = LlamaCppService(baseURL: llamaCppUrl, apiKey: apiKey)
+        } else {
+            self.llamaCppService = nil // Explicitly nil out if URI is missing/empty
+        }
+        
+        // Re-initialize MLXService
+        if let mlxUrlString = UserDefaults.standard.string(forKey: "mlxUri"),
+           !mlxUrlString.isEmpty,
+           var mlxUrl = URL(string: mlxUrlString) {
+            if mlxUrl.scheme == nil { // Add default scheme if missing
+                mlxUrl = URL(string: "http://" + mlxUrlString) ?? mlxUrl
+            }
+            let apiKey = UserDefaults.standard.string(forKey: "mlxApiKey")
+            self.mlxService = MLXService(baseURL: mlxUrl, apiKey: apiKey)
+        } else {
+            self.mlxService = nil // Explicitly nil out if URI is missing/empty
+        }
+        
+        // Ensure OllamaService is also up-to-date with its endpoint
+        OllamaService.shared.initEndpoint()
+        
+        // Reload all models
+        try await loadModels()
+    }
 }
