@@ -89,16 +89,26 @@ final class LanguageModelStore {
         var allRemoteModels: [LanguageModel] = []
         
         // Ollama Models
-        OllamaService.shared.initEndpoint() // Ensure OllamaService is configured
-        do {
-            if await OllamaService.shared.reachable() {
-                let ollamaModels = try await OllamaService.shared.getModels()
-                allRemoteModels.append(contentsOf: ollamaModels)
-            } else {
-                print("Ollama service not reachable.")
+        OllamaService.shared.initEndpoint() // This ensures OllamaService is configured based on UserDefaults or default.
+                                            // It's okay to call this unconditionally.
+
+        // Only attempt to fetch Ollama models if a URI is actually set by the user in UserDefaults.
+        let ollamaUriIsConfigured = !(UserDefaults.standard.string(forKey: "ollamaUri") ?? "").isEmpty
+
+        if ollamaUriIsConfigured {
+            do {
+                if await OllamaService.shared.reachable() {
+                    print("Attempting to load Ollama models...")
+                    let ollamaModels = try await OllamaService.shared.getModels()
+                    allRemoteModels.append(contentsOf: ollamaModels)
+                } else {
+                    print("Ollama service configured but not reachable.")
+                }
+            } catch {
+                print("Failed to load Ollama models: \(error)")
             }
-        } catch {
-            print("Failed to load Ollama models: \(error)")
+        } else {
+            print("Ollama URI not configured by user, skipping Ollama model loading.")
         }
         
         // Llama.cpp Models

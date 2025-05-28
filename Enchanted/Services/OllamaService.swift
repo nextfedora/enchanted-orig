@@ -48,7 +48,9 @@ class OllamaService: LLMService, @unchecked Sendable {
                         continuation.finish(throwing: error)
                     }
                 }, receiveValue: { streamResponse in // streamResponse is OllamaKit.OKChatResponse
-                    continuation.yield(streamResponse.message?.content ?? "")
+                    let contentToYield = streamResponse.message?.content ?? ""
+                    print("OllamaService yielding chunk: \(contentToYield)") // Temporary debug print
+                    continuation.yield(contentToYield)
                     // Check if this is the last message in the stream based on OllamaKit's API.
                     // If OKChatResponse indicates it's the final message (e.g. a `done` flag or specific content),
                     // you might call continuation.finish() here.

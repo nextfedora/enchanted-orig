@@ -18,9 +18,6 @@ final class ConversationStore: Sendable {
     private var swiftDataService: SwiftDataService
     private var generationTask: Task<Void, Never>? // Changed from AnyCancellable for the new Task-based approach
     
-    /// For some reason (SwiftUI bug / too frequent UI updates) updating UI for each stream message sometimes freezes the UI.
-    /// Throttling UI updates seem to fix the issue.
-    private var currentMessageBuffer: String = ""
 #if os(macOS)
     private let throttler = Throttler(delay: 0.1)
 #else
@@ -228,51 +225,46 @@ final class ConversationStore: Sendable {
     
     @MainActor
     private func handleReceiveStream(_ contentChunk: String) {
-        if messages.isEmpty { return }
+        if messages.isEmpty { 
+            print("Warning: handleReceiveStream called but messages list is empty.")
+            return 
+        }
 
-        currentMessageBuffer = currentMessageBuffer + contentChunk
-        
+        // Pass the specific chunk to the throttler.
+        // The throttler's job is to limit the frequency of UI updates.
         throttler.throttle { [weak self] in
             guard let self = self else { return }
-            // Ensure we are appending to the last message, which should be the assistant's
+            
+            // Ensure we are appending to the last message, which should be the assistant's.
+            // Accessing self.messages.last directly is okay if throttler runs on main actor,
+            // which it should as handleReceiveStream is @MainActor and throttler is called from it.
             if let lastMessage = self.messages.last, lastMessage.role == "assistant" {
-                 // It's important that self.messages is the up-to-date list from the main actor.
-                 // Accessing self.messages.last directly might be okay if throttler runs on main,
-                 // but direct index access is safer.
-                let assistantMessageIndex = self.messages.count - 1
-                self.messages[assistantMessageIndex].content.append(self.currentMessageBuffer)
+                self.messages[self.messages.count - 1].content.append(contentChunk)
             } else {
-                // This case might indicate an issue if there's no assistant message to append to.
-                // For now, we'll assume an assistant message was already created and is the last one.
-                print("Warning: No assistant message found or last message is not assistant to append stream to.")
+                print("Warning: No assistant message found or last message is not assistant to append chunk: \(contentChunk)")
             }
-            self.currentMessageBuffer = ""
         }
     }
     
     @MainActor
     private func handleError(_ errorMessage: String) {
         guard let lastMessage = messages.last, lastMessage.role == "assistant" else {
-            // If there's no last message, or it's not an assistant message, create one for the error.
-            // This could happen if the error occurs before the assistant message is set up.
-            let errorConversation = selectedConversation ?? ConversationSD(name: "Error Conversation")
-            if selectedConversation == nil {
-                Task { try? await swiftDataService.createConversation(errorConversation) }
+            // This case handles errors where no suitable assistant message is available to update.
+            // For example, if the error occurs before the initial empty assistant message is created
+            // or if the last message is not an assistant's.
+            // You might want to log this or create a new error message in the conversation here
+            // if that's desired UX. For now, just updating the conversation state.
+            print("handleError: No suitable assistant message found to display error content. Error: \(errorMessage)")
+            withAnimation {
+                conversationState = .error(message: errorMessage)
             }
-            let errorMsg = MessageSD(content: "Error: \(errorMessage)", role: "assistant", error: true, done: false)
-            errorMsg.conversation = errorConversation
-            Task { try? await swiftDataService.createMessage(errorMsg) }
-            if let currentConv = selectedConversation {
-                Task { try? await reloadConversation(currentConv) }
-            } else {
-                 DispatchQueue.main.async { self.messages.append(errorMsg) }
-            }
-            withAnimation { conversationState = .error(message: errorMessage) }
             return
         }
         
+        // Update the existing assistant message to show the error
+        lastMessage.content = "Error: \(errorMessage)"
         lastMessage.error = true
-        lastMessage.done = false // Typically, an error means it's not "done" successfully
+        lastMessage.done = true // The attempt for this message is done, even if it's an error.
         
         Task(priority: .background) {
             try? await swiftDataService.updateMessage(lastMessage)
@@ -285,14 +277,6 @@ final class ConversationStore: Sendable {
     
     @MainActor
     private func handleComplete() {
-        // If currentMessageBuffer has content, flush it.
-        if !currentMessageBuffer.isEmpty {
-            if let lastMessage = messages.last, lastMessage.role == "assistant" {
-                messages[messages.count - 1].content.append(currentMessageBuffer)
-            }
-            currentMessageBuffer = ""
-        }
-
         guard let lastMessage = messages.last, lastMessage.role == "assistant" else {
             // This case should ideally not happen if an assistant message was created.
             // If it does, it might mean the stream completed without any assistant message setup.
