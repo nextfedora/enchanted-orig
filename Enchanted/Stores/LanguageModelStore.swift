@@ -207,4 +207,20 @@ final class LanguageModelStore {
         // Reload all models
         try await loadModels()
     }
+
+    public func getService(for provider: ModelProvider) -> LLMService? {
+        switch provider {
+        case .ollama:
+            // OllamaService.shared.initEndpoint() // Ensure it's configured, though reconfigureServicesAndReloadModels should handle this.
+            return OllamaService.shared
+        case .llamaCpp:
+            // llamaCppService is configured during init and reconfigureServicesAndReloadModels
+            return llamaCppService
+        case .mlx:
+            // mlxService is configured during init and reconfigureServicesAndReloadModels
+            return mlxService
+        // No default case needed if ModelProvider is fully covered and not expected to expand without code changes.
+        // If ModelProvider could expand independently, a default case logging an error or returning nil would be good.
+        }
+    }
 }

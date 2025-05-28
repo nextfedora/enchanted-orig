@@ -64,7 +64,25 @@ final class AppStore {
     }
 
     private func reachable() async -> Bool {
-        let status = await OllamaService.shared.reachable()
+        // Access LanguageModelStore to find the currently selected provider
+        let languageModelStore = LanguageModelStore.shared
+        
+        // Get the selected model's provider
+        // Accessing @MainActor property selectedModel, then its modelProvider
+        // This might require MainActor.run if selectedModel access becomes problematic from background
+        guard let selectedProvider = await languageModelStore.selectedModel?.modelProvider else {
+            // No model selected, or model has no provider.
+            return false
+        }
+        
+        // Get the service for the selected provider
+        guard let currentService = languageModelStore.getService(for: selectedProvider) else {
+            // No service configured or available for the selected provider.
+            return false
+        }
+        
+        // Check reachability of the currently selected service
+        let status = await currentService.reachable()
         return status
     }
     
